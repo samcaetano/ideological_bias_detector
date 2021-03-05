@@ -1,2 +1,5 @@
-# ideological_bias_detector
-Ideological/political bias detector using language models and psycholinguistic features
+# Ideological bias detector from text using language models and psycholinguistic features
+
+TO-DO
+
+
