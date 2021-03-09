@@ -10,7 +10,7 @@ class Embeddings_builder:
     self.BERT_MAX_LEN = 300
 		self.CSV_PATH = '../data/'
     self.LIWC_PATH = '../liwc/'
-    self.LIWC_MRC_PATH = '../liwc_mrc/'
+    self.LIWC_MRC_PATH = '../liwc_mrc/' 
 
     if lang == 'en':
       # If text language is English
