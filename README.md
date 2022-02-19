@@ -9,7 +9,7 @@ The inference of politically-charged information from text data is a popular res
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
 
-### Organization
+## Organization
 
 This repository is organized as follows:
 
@@ -22,7 +22,7 @@ This repository is organized as follows:
 > :pencil2: sngram: folder containing syntatic dependencies n-grams
 
 
-### How to cite this work
+## How to cite this work
 You may cite this work into yours using the following bibtext:
 ```
 @article{AUTHORS,
@@ -34,7 +34,7 @@ You may cite this work into yours using the following bibtext:
 ```
 
 
-### Contributors
+## Contributors
 
 - Samuel Caetano da Silva
 - Ivandré Paraboni
