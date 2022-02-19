@@ -5,9 +5,9 @@ The inference of politically-charged information from text data is a popular res
 
 This repository is organized as follows:
 
-> data: folder containing all dataset used
+> :floppy_disk: data: folder containing all dataset used
 
-> models: folder containing all Python scripts and modules used
+> :wrench: models: folder containing all Python scripts and modules used
 
 
 Author: Samuel Caetano da Silva and Ivandré Paraboni
