@@ -22,6 +22,18 @@ This repository is organized as follows:
 > :pencil2: sngram: folder containing syntatic dependencies n-grams
 
 
+### How to cite this work
+You may cite this work into yours using the following bibtext:
+```
+@article{AUTHORS,
+    title={TITLE}, 
+    author={Samuel Silva e Ivandré Paraboni}, 
+    booktitle={}, 
+    year={YEAR}
+}
+```
+
+
 ### Contributors
 
 - Samuel Caetano da Silva
