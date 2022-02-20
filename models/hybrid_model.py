@@ -1,11 +1,12 @@
 ''' This is the script model '''
-from tensorflow.keras.callbacks import ModelCheckpoint
-from sklearn import metrics
 import tensorflow as tf
 import numpy as np
 import json
 import math
-import tensorflow_addons as tfa 
+import tensorflow_addons as tfa
+from bert_embeddings import Embeddings_builder
+from sklearn import metrics
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 class NeuralModel:
   def __init__(self,
@@ -38,7 +39,11 @@ class NeuralModel:
     self.mode = mode
     self.corpus = corpus    
 
+    # Instantiates the BERT wrapper
+    builder = Embeddings_builder()
+
     self.strategy = tf.distribute.MirroredStrategy()
+    # TODO: Adjust these paths
     self.model_path = '/content/drive/My Drive/Colab Notebooks/GovBR/saved_models/'
     self.json_path = '/content/drive/My Drive/Colab Notebooks/GovBR/json/'
 
@@ -50,12 +55,15 @@ class NeuralModel:
       axis=1,
     )
 
+  # TODO: Refactor this reorder function
   def _reorder_hybrid(self, sample, sngram):
     return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1]
 
+  # TODO: Refactor this reorder function
   def _reorder_for_test(self, sample, sngram):
     return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1], sample[2]
 
+  # TODO: Refactor this reorder function
   def _reorder(self, embedding, label, text):
     return {'input_embedding':embedding}, label
 
@@ -187,11 +195,11 @@ class NeuralModel:
     steps_per_epoch = math.ceil(TRAIN_SIZE / BATCH_SIZE) 
     validation_steps = math.ceil((DEVELOPMENT_SIZE - TRAIN_SIZE) / BATCH_SIZE) 
 
-    train = train.map(builder.efficient_bert_preprocessing)
-    train = train.map(builder.efficient_build_bert_embeddings)
+    train = train.map(self.builder.efficient_bert_preprocessing)
+    train = train.map(self.builder.efficient_build_bert_embeddings)
 
-    validation = validation.map(builder.efficient_bert_preprocessing)
-    validation = validation.map(builder.efficient_build_bert_embeddings)
+    validation = validation.map(self.builder.efficient_bert_preprocessing)
+    validation = validation.map(self.builder.efficient_build_bert_embeddings)
 
     if self.comple_features_train is not None:
       self.comple_features_train = self.comple_features_train.take(DEVELOPMENT_SIZE) # takes all
@@ -213,6 +221,7 @@ class NeuralModel:
     train_dataset = train.batch(BATCH_SIZE).cache().repeat(50)
     validation_dataset = validation.batch(BATCH_SIZE).repeat(1)
     
+    # TODO: Adjust path to save model
     checkpoints = ModelCheckpoint(
       filepath=self.model_path+f'{self.corpus}.{self.mode}.model.hdf5',
       verbose=2,
@@ -241,9 +250,8 @@ class NeuralModel:
 
     test = test.take(test_num_samples)
 
-    test = test.map(builder.efficient_bert_preprocessing)
-    test = test.map(builder.efficient_build_bert_embeddings)
-
+    test = test.map(self.builder.efficient_bert_preprocessing)
+    test = test.map(self.builder.efficient_build_bert_embeddings)
 
     if self.comple_features_test is not None:      
       test_sngram = self.comple_features_test.map(self._pack_features)
@@ -272,12 +280,15 @@ class NeuralModel:
       predictions.append(int(np.argmax(y_pred)))
       references.append(int(np.argmax(y)))
 
+    # TODO: Adjust this path
     with open(self.json_path + f'{self.corpus}.{self.mode}.json', 'w') as f:
       json.dump(predictions, f)
 
+    # TODO: Adjust this path
     with open(self.json_path + f'{self.corpus}.{self.mode}.TRUE.json', 'w') as f:
       json.dump(references, f)
 
+    # TODO: Adjust this path
     with open(self.json_path+f'{self.corpus}.{self.mode}.incorrects', 'w') as f:
       json.dump(incorrects, f)
 
