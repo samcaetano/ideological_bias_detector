@@ -1,4 +1,4 @@
-# Text and author-level political inference using heterogeneous knowledge representations :speech_balloon:
+# Polarization and political ideology detection using neural models and heteregeneous knowledge :speech_balloon:
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![TensorFlow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?style=for-the-badge&logo=TensorFlow&logoColor=white) ![scikit-learn](https://img.shields.io/badge/scikit--learn-%23F7931E.svg?style=for-the-badge&logo=scikit-learn&logoColor=white)
 
@@ -25,11 +25,13 @@ This repository is organized as follows:
 ## How to cite this work
 You may cite this work into yours using the following bibtext:
 ```
-@article{AUTHORS,
-    title={TITLE}, 
-    author={Samuel Silva e Ivandré Paraboni}, 
-    booktitle={}, 
-    year={YEAR}
+@MASTERSDISSERTATION{silva2022,
+  title        = {Polarization and political ideology detection using neural models and heteregeneous knowledge},
+  author       = {Samuel Caetano da Silva},
+  year         = {2022},
+  type         = "Master's Dissertation",
+  school       = "University of São Paulo",
+  address      = "São Paulo, SP, Brazil",
 }
 ```
 
