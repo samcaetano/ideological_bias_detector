@@ -1,23 +1,19 @@
-''' This script model is for building the Glove and BERT embeddings  '''
-
-from pytorch_pretrained_bert import BertModel
-from pytorch_pretrained_bert import BertTokenizer
+"""
+This script model is for building the BERT embeddings
+"""
 import numpy as np
-import pandas as pd
 import torch
 import re
-import json
-import math
-from keras.preprocessing.sequence import pad_sequences
-from keras.preprocessing.text import text_to_word_sequence, one_hot
-from keras import backend as K
 import tensorflow as tf
+from pytorch_pretrained_bert import BertModel
+from pytorch_pretrained_bert import BertTokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 class Embeddings_builder:
   def __init__(self, corpus, max_len=300, dim=768, num_classes=2, batch_size=16, lang='pt'):
     self.corpus = corpus
-    self.BERT_MAX_LEN = max_len
-    self.BERT_DIM = dim
+    self.bert_max_len = max_len
+    self.bert_dim = dim
     self.num_classes = num_classes
     self.batch_size = batch_size
 
@@ -105,7 +101,7 @@ class Embeddings_builder:
     tokenized_text = self.tokenizer.tokenize(text)
     
     # Clip to the maximum BERT's model sequence's length
-    tokenized_text = tokenized_text[:self.BERT_MAX_LEN]
+    tokenized_text = tokenized_text[:self.bert_max_len]
 
     # Find the BERT's index for each token in the sentence
     indexed_text = self.tokenizer.convert_tokens_to_ids(tokenized_text)
@@ -113,7 +109,7 @@ class Embeddings_builder:
     # Pad the text to the limit of 300 tokens
     indexed_text = pad_sequences(
       [indexed_text],
-      maxlen=self.BERT_MAX_LEN,
+      maxlen=self.bert_max_len,
       padding='post'
     )
 
@@ -217,7 +213,7 @@ class Embeddings_builder:
       ),
     )
     
-    BERTed_sample[0].set_shape([self.BERT_MAX_LEN, self.BERT_DIM])
+    BERTed_sample[0].set_shape([self.bert_max_len, self.bert_dim])
     BERTed_sample[1].set_shape([2])
 
     return BERTed_sample
