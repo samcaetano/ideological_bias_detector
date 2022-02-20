@@ -1,172 +1,188 @@
 ''' This is the script model '''
-from tensorflow.keras.layers import Input, Dense, Conv1D, MaxPooling1D, Conv2D
-from tensorflow.keras.layers import Concatenate, MaxPooling2D, Flatten, Dropout
-from tensorflow.keras.layers import Embedding, BatchNormalization, Add, Attention
-from tensorflow.keras.models import load_model
-from tensorflow.keras import Model
-from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import ModelCheckpoint
-from pytorch_pretrained_bert import BertModel
-from sklearn.model_selection import KFold, train_test_split
-from tensorflow.keras.metrics import CategoricalAccuracy
-from tensorflow.keras import backend as K
-from tensorflow.keras import optimizers
 from sklearn import metrics
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
-import torch
 import json
 import math
 import tensorflow_addons as tfa 
 
 class NeuralModel:
-  def __init__(self, corpus, mode='bert', num_conv_layers=2, 
-               num_sngram_features=None, num_samples=510,
-               attention=False, idx2word=None, sngram_train=None, sngram_test=None):
+  def __init__(self,
+    corpus,
+    mode,
+    num_samples,
+    num_conv_layers=5,
+    batch_size=8,
+    num_epochs=15,
+    num_tokens=300,
+    bert_dim=768,
+    num_comple_features=None,
+    comple_features_train=None,
+    comple_features_test=None,
+  ):
     # Hyperparameters
-    self.num_folds = 5
-    self.batch_size = 8
-    self.num_epochs = 15
-    self.num_tokens = 300
-    self.num_sngram_features = num_sngram_features
-    self.BERT_dim = 768
-    self.GLOVE_dim = 300
-    self.kfold = KFold(n_splits=self.num_folds, shuffle=False)
+    self.batch_size = batch_size
+    self.num_samples = num_samples
+    self.num_epochs = num_epochs
+    self.num_tokens = num_tokens
+    self.num_comple_features = num_comple_features
+    self.bert_dim = bert_dim
     self.num_conv_layers = num_conv_layers
-    self.attention = attention
 
-    # External knowledge
-    self.idx2word = idx2word # vocabulary
-    self.sngram_train = sngram_train # psycolinguistic    
-    self.sngram_test = sngram_test
+    # Complementary features
+    self.comple_features_train = comple_features_train
+    self.comple_features_test = comple_features_test
 
     # Meta-data
     self.mode = mode
-    self.corpus = corpus
-
-    self.num_samples = num_samples #  408 dev, 102 test
+    self.corpus = corpus    
 
     self.strategy = tf.distribute.MirroredStrategy()
     self.model_path = '/content/drive/My Drive/Colab Notebooks/GovBR/saved_models/'
     self.json_path = '/content/drive/My Drive/Colab Notebooks/GovBR/json/'
 
+  def _pack_features(self, features):
+    return tf.stack(
+      list(
+        features.values()
+      ),
+      axis=1,
+    )
+
+  def _reorder_hybrid(self, sample, sngram):
+    return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1]
+
+  def _reorder_for_test(self, sample, sngram):
+    return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1], sample[2]
+
+  def _reorder(self, embedding, label, text):
+    return {'input_embedding':embedding}, label
 
   def build_graph(self):
-    ''' 
+    """
     This will build the model's architecture for classification
 
-    :param: None
-    :return: a tf.keras Model with layers to fit
-    '''
+    Args:
+      None
+    
+    Returns:
+      a tf.keras Model with layers to fit
+    """
 
     # Open the strategy scope
     with self.strategy.scope():
 
-      # This is the text embedding layer
-      embedding_layer = tf.keras.layers.Input(shape=(self.num_tokens, self.BERT_dim), name='input_embedding')
+      # Layer for textual word embeddings
+      embedding_layer = tf.keras.layers.Input(shape=(self.num_tokens, self.bert_dim), name='input_embedding')
 
-      if self.mode == 'bert+sngram+liwc':
-        
-        input_sngram = tf.keras.layers.Input(shape=(1, self.num_sngram_features), name='input_sngram')
-        sngram_layer = tf.keras.layers.Flatten()(input_sngram)
+      # Whether model is meant to be baseline.bert
+      query_layer = tf.keras.layers.Flatten()(embedding_layer)
 
-        # Creates CNN layers
+      # Whether model is cnn-based
+      if self.mode in ['bert', 'bert+sngram', 'bert+liwc', 'bert+sngram+liwc']:
         kernel_sizes = [2, 3, 4, 5, 6]
         layers = []
         for i in range(self.num_conv_layers):
-          # filters 128 or 16
-          conv_layer = tf.keras.layers.Conv1D(filters=128, kernel_size=kernel_sizes[i], activation="relu")(embedding_layer)
+          # Add a CNN layer
+          conv_layer = tf.keras.layers.Conv1D(
+            filters=128,
+            kernel_size=kernel_sizes[i],
+            activation="relu"
+          )(embedding_layer)
+          
           conv_layer = tf.keras.layers.BatchNormalization()(conv_layer)
-          conv_layer = tf.keras.layers.MaxPooling1D(pool_size=self.num_tokens-kernel_sizes[i])(conv_layer)
+          
+          # Add MaxPooling layer
+          conv_layer = tf.keras.layers.MaxPooling1D(
+            pool_size=self.num_tokens-kernel_sizes[i]
+          )(conv_layer)
+          
+          # Add dropout layer
           conv_layer = tf.keras.layers.Dropout(0.5)(conv_layer)
           layers.append(conv_layer)
         
         # Concatenate all CNN layers
-        query_layer = tf.keras.layers.Flatten()(
-                          tf.keras.layers.Concatenate()(layers))
+        conv_layers = tf.keras.layers.Concatenate()(layers)
+        conv_layers = tf.keras.layers.Flatten()(conv_layers)
 
-        #bert_layer = tf.keras.layers.Flatten()(embedding_layer)
+        # Updates previous query_layer, from baseline.bert to CNN.bert
+        query_layer = tf.keras.Flatten()(conv_layers)
 
-        concat_layer = tf.keras.layers.Concatenate()([sngram_layer, query_layer])
+        # Whether model is hybrid
+        if self.mode in ['bert+sngram', 'bert+liwc', 'bert+sngram+liwc']:
+          input_extra = tf.keras.layers.Input(
+            shape=(1, self.num_comple_features),
+            name='input_extra_knowledge'
+          )
 
-      elif self.mode == 'baseline.bert':
-        # Get a baseline.bert model
-        concat_layer = tf.keras.layers.Flatten()(embedding_layer)
+          # Add CNN to the heterogeneous features
+          layer_extra = tf.keras.layers.Conv1D(
+            filters=128,
+            kernel_size=1,
+            activation='relu'
+          )(input_extra)
+          
+          layer_extra = tf.keras.layers.BatchNormalization()(layer_extra)
+          layer_extra = tf.keras.layers.MaxPooling1D(pool_size=1)(layer_extra)
+          layer_extra = tf.keras.layers.Flatten()(layer_extra)
 
-      else:
-        # Get CNN based models
-        if self.mode in ['cnn.bert+sngram']:
-          # This is the Sn-gram features layer
-          input_sngram = tf.keras.layers.Input(shape=(1, self.num_sngram_features), name='input_sngram')
-          layer_sngram = tf.keras.layers.Conv1D(filters=128, kernel_size=1, activation="relu")(input_sngram)
-          layer_sngram = tf.keras.layers.BatchNormalization()(layer_sngram)
-          layer_sngram = tf.keras.layers.MaxPooling1D(pool_size=1)(layer_sngram)
-          layer_sngram = tf.keras.layers.Flatten()(layer_sngram)
+          # Concatenate hybrid cnn with embedding cnn
+          concat_layer = tf.keras.layers.Concatenate()([layer_extra, conv_layers])
+          
+          # Updates previous query_layer, from CNN.bert to any hybrid cnn-based model
+          query_layer = tf.keras.Flatten()(concat_layer)
+     
+      query_layer = tf.keras.layers.Dropout(0.5)(query_layer)
+      output_layer = tf.keras.layers.Dense(
+        self.num_classes,
+        activation='softmax',
+        name='output',
+      )(query_layer)
 
-        # Creates CNN layers
-        kernel_sizes = [2, 3, 4, 5, 6]
-        layers = []
-        for i in range(self.num_conv_layers):
-          # filters 128 or 16
-          conv_layer = tf.keras.layers.Conv1D(filters=128, kernel_size=kernel_sizes[i], activation="relu")(embedding_layer)
-          conv_layer = tf.keras.layers.BatchNormalization()(conv_layer)
-          conv_layer = tf.keras.layers.MaxPooling1D(pool_size=self.num_tokens-kernel_sizes[i])(conv_layer)
-          conv_layer = tf.keras.layers.Dropout(0.5)(conv_layer)
-          layers.append(conv_layer)
-        
-        # Concatenate all CNN layers
-        query_layer = tf.keras.layers.Concatenate()(layers) 
-      
-        if self.mode == 'cnn.bert':
-          # Keep data-driven approach
-          concat_layer = query_layer
-        
-        elif self.mode in ['cnn.bert+sngram']:
-          # Add CNN and psycholinguistic layers
-          concat_layer = tf.keras.layers.Dense(128)(query_layer)
-          concat_layer = tf.keras.layers.Add()([concat_layer, layer_sngram])
-        
-        concat_layer = tf.keras.layers.Flatten()(concat_layer)
-      
+      if self.mode in ['baseline.bert', 'bert']:
+        model = tf.keras.Model(
+          embedding_layer,
+          output_layer,
+        )
 
-      concat_layer = tf.keras.layers.Dropout(0.5)(concat_layer)
-      output_layer = tf.keras.layers.Dense(2, activation='softmax', name='output')(concat_layer)
-
-      if self.mode in ['baseline.bert', 'cnn.bert']:
-        model = tf.keras.Model(embedding_layer, output_layer)
-
-      elif self.mode in ['bert+sngram+liwc']:
-        model = tf.keras.Model([embedding_layer, input_sngram], output_layer)
+      elif self.mode in ['bert+sngram', 'bert+liwc', 'bert+sngram+liwc']:
+        model = tf.keras.Model(
+          [embedding_layer, input_extra],
+          output_layer,
+        )
 
       model.compile(
           loss=tf.keras.losses.CategoricalCrossentropy(),
           optimizer=tf.keras.optimizers.Adam(),
-          metrics=[tfa.metrics.F1Score(2), 'accuracy']
+          metrics=[
+            tfa.metrics.F1Score(2),
+            'accuracy',
+          ]
       )
 
       return model
 
   def train(self, dataset):
-    ''' 
-      This will train the builted graph 
-    '''
+    """This will train the builted graph 
+    """
+
     model = self.build_graph()
     model.summary()
 
     BATCH_SIZE_PER_REPLICA = self.batch_size
     BATCH_SIZE = BATCH_SIZE_PER_REPLICA * self.strategy.num_replicas_in_sync
-    DEVELOPMENT_SIZE = math.ceil(self.num_samples * 0.8) 
+    DEVELOPMENT_SIZE = math.ceil(self.num_samples) 
     
+    # Takes all dataset
     dataset = dataset.take(DEVELOPMENT_SIZE)
 
-    TRAIN_SIZE = math.ceil(DEVELOPMENT_SIZE * 0.8) # 2612
+    # Split training section
+    TRAIN_SIZE = math.ceil(DEVELOPMENT_SIZE * 0.8)
 
-    train = dataset.take(TRAIN_SIZE) # takes all
+    # Takes training and validation section
+    train = dataset.take(TRAIN_SIZE)
     validation = dataset.skip(TRAIN_SIZE)
-
-    if self.sngram_train is not None:
-      self.sngram_train = self.sngram_train.take(DEVELOPMENT_SIZE) # takes all
         
     steps_per_epoch = math.ceil(TRAIN_SIZE / BATCH_SIZE) 
     validation_steps = math.ceil((DEVELOPMENT_SIZE - TRAIN_SIZE) / BATCH_SIZE) 
@@ -177,42 +193,33 @@ class NeuralModel:
     validation = validation.map(builder.efficient_bert_preprocessing)
     validation = validation.map(builder.efficient_build_bert_embeddings)
 
-    if self.sngram_train is not None:
-      def pack_features(features):
-        return tf.stack(list(features.values()), axis=1)
+    if self.comple_features_train is not None:
+      self.comple_features_train = self.comple_features_train.take(DEVELOPMENT_SIZE) # takes all
+      self.comple_features_train = self.comple_features_train.map(self._pack_features)
 
-      def reorder(sample, sngram):
-        return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1]
-      
-      self.sngram_train = self.sngram_train.map(pack_features)
-
-      train_sngram = self.sngram_train.take(TRAIN_SIZE)
-      validation_sngram = self.sngram_train.skip(TRAIN_SIZE)
+      train_sngram = self.comple_features_train.take(TRAIN_SIZE)
+      validation_sngram = self.comple_features_train.skip(TRAIN_SIZE)
 
       train = tf.data.Dataset.zip((train, train_sngram))
       validation = tf.data.Dataset.zip((validation, validation_sngram))
 
-      train = train.map(reorder)
-      validation = validation.map(reorder)
+      train = train.map(self._reorder_hybrid)
+      validation = validation.map(self._reorder_hybrid)
     
     else:
-      def reorder(embedding, label, text):
-        return {'input_embedding':embedding}, label
-
-      train = train.map(reorder)
-      validation = validation.map(reorder)
-
+      train = train.map(self._reorder)
+      validation = validation.map(self._reorder)
 
     train_dataset = train.batch(BATCH_SIZE).cache().repeat(50)
     validation_dataset = validation.batch(BATCH_SIZE).repeat(1)
     
     checkpoints = ModelCheckpoint(
-						filepath=self.model_path+f'{self.corpus}.{self.mode}.model.hdf5',
-            verbose=2,
-            monitor='val_accuracy',
-            save_best_only=True, 
-            mode='max'
-            )
+      filepath=self.model_path+f'{self.corpus}.{self.mode}.model.hdf5',
+      verbose=2,
+      monitor='val_accuracy',
+      save_best_only=True, 
+      mode='max',
+    )
        
     history = model.fit(
         train_dataset,
@@ -222,44 +229,31 @@ class NeuralModel:
         validation_steps=validation_steps,
         validation_freq=25,
         callbacks=[checkpoints]
-        )
-    
-    print(history.history)
+    )
 
-  def predict(self, test):
+  def predict(self, test, test_num_samples):
 
     model = self.build_graph()
     
     model.load_weights(
-        self.model_path + f'{self.corpus}.{self.mode}.model.hdf5'
-        )
+      self.model_path + f'{self.corpus}.{self.mode}.model.hdf5'
+    )
 
-    test = test.take(math.ceil(self.num_samples * 0.2))
+    test = test.take(test_num_samples)
 
     test = test.map(builder.efficient_bert_preprocessing)
     test = test.map(builder.efficient_build_bert_embeddings)
 
-    #steps_per_epoch = math.ceil((self.num_samples * 0.2) / self.batch_size)
-    steps_per_epoch = math.ceil(1000 / self.batch_size)
 
-    if self.sngram_test is not None:
-      def pack_features(features):
-        return tf.stack(list(features.values()), axis=1)
-
-      def reorder(sample, sngram):
-        return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1], sample[2]
-      
-      test_sngram = self.sngram_test.map(pack_features)
+    if self.comple_features_test is not None:      
+      test_sngram = self.comple_features_test.map(self._pack_features)
 
       test = tf.data.Dataset.zip((test, test_sngram))
 
-      test = test.map(reorder)
+      test = test.map(self._reorder_for_test)
 
     else:
-      def reorder(embedding, label, text):
-        return {'input_embedding':embedding}, label, text
-
-      test = test.map(reorder)
+      test = test.map(self._reorder)
     
     test = test.batch(1)
 
@@ -274,12 +268,10 @@ class NeuralModel:
       if int(np.argmax(y_pred)) != int(np.argmax(y)):
         text = text.numpy()[0].decode('utf-8')
         incorrects.append(text)
-        
 
       predictions.append(int(np.argmax(y_pred)))
       references.append(int(np.argmax(y)))
-      
-    
+
     with open(self.json_path + f'{self.corpus}.{self.mode}.json', 'w') as f:
       json.dump(predictions, f)
 
@@ -287,8 +279,10 @@ class NeuralModel:
       json.dump(references, f)
 
     with open(self.json_path+f'{self.corpus}.{self.mode}.incorrects', 'w') as f:
-      print(incorrects)
       json.dump(incorrects, f)
 
-    print(metrics.confusion_matrix(references, predictions))
-    print(metrics.classification_report(references, predictions))  
+    confusion_matrix = metrics.confusion_matrix(references, predictions)
+    class_report = metrics.classification_report(references, predictions)
+
+    print(confusion_matrix)
+    print(class_report)
