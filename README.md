@@ -17,7 +17,7 @@ This repository is organized as follows:
 > 
 > :wrench: models: folder containing all Python scripts and modules used
 > 
-> :heart_eyes_cat: psych: folder containing psycholinguistic resources
+> ::brain:: psych: folder containing psycholinguistic resources
 > 
 > :pencil2: sngram: folder containing syntatic dependencies n-grams
 
