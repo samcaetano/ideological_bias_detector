@@ -28,9 +28,9 @@ class Embeddings_builder:
       self.tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-uncased')
 
     # Define resource paths
-    self.csv_path = f'../data/{self.corpus}'
-    self.psych_path = f'../psych_features/{self.corpus}'
-    self.sngram_path = f'../sngram_features/{self.corpus}'
+    self.csv_path = f'data/{self.corpus}/'
+    self.psych_path = f'psych_features/{self.corpus}/'
+    self.sngram_path = f'sngram_features/{self.corpus}/'
 
   def load_text(self, filename):
     """Loads textual dataset 
@@ -59,6 +59,22 @@ class Embeddings_builder:
     """
     return tf.data.experimental.make_csv_dataset(
         self.psych_path+filename,
+        shuffle=False,
+        batch_size=1,
+        num_parallel_reads=4,
+    )
+
+  def load_sngram(self, filename):
+    """Loads psychlinguistic features
+
+    Args:
+        filename: the corpus name of the refered psychlinguistic features to use
+
+    Returns:
+        a tf.Dataset
+    """
+    return tf.data.experimental.make_csv_dataset(
+        self.sngram_path+filename,
         shuffle=False,
         batch_size=1,
         num_parallel_reads=4,
@@ -180,8 +196,8 @@ class Embeddings_builder:
     preprocessed_sample = tf.py_function(
       self._bert_preproc_unit,
       inp=[
-        sample['Text'],
-        sample['Class'],
+        sample['text'],
+        sample['hyperpartisan'],
       ],
       Tout=(
         tf.int32,

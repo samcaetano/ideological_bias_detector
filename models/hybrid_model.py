@@ -4,7 +4,7 @@ import numpy as np
 import json
 import math
 import tensorflow_addons as tfa
-from bert_embeddings import Embeddings_builder
+from .bert_embeddings import Embeddings_builder
 from sklearn import metrics
 from tensorflow.keras.callbacks import ModelCheckpoint
 
@@ -13,11 +13,13 @@ class NeuralModel:
     corpus,
     mode,
     num_samples,
+    builder,
     num_conv_layers=5,
     batch_size=8,
     num_epochs=15,
     num_tokens=300,
     bert_dim=768,
+    num_classes=2,
     num_comple_features=None,
     comple_features_train=None,
     comple_features_test=None,
@@ -30,6 +32,8 @@ class NeuralModel:
     self.num_comple_features = num_comple_features
     self.bert_dim = bert_dim
     self.num_conv_layers = num_conv_layers
+    self.num_classes = num_classes
+    self.builder = builder
 
     # Complementary features
     self.comple_features_train = comple_features_train
@@ -37,15 +41,15 @@ class NeuralModel:
 
     # Meta-data
     self.mode = mode
-    self.corpus = corpus    
+    self.corpus = corpus
 
     # Instantiates the BERT wrapper
-    builder = Embeddings_builder()
+    builder = Embeddings_builder(self.corpus)
 
     self.strategy = tf.distribute.MirroredStrategy()
     # TODO: Adjust these paths
-    self.model_path = '/content/drive/My Drive/Colab Notebooks/GovBR/saved_models/'
-    self.json_path = '/content/drive/My Drive/Colab Notebooks/GovBR/json/'
+    self.model_path = f'saved_models/{self.corpus}/'
+    self.json_path = f'json/{self.corpus}/'
 
   def _pack_features(self, features):
     return tf.stack(
@@ -57,11 +61,11 @@ class NeuralModel:
 
   # TODO: Refactor this reorder function
   def _reorder_hybrid(self, sample, sngram):
-    return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1]
+    return {'input_embedding':sample[0], 'input_extra_knowledge':sngram}, sample[1]
 
   # TODO: Refactor this reorder function
   def _reorder_for_test(self, sample, sngram):
-    return {'input_embedding':sample[0], 'input_sngram':sngram}, sample[1], sample[2]
+    return {'input_embedding':sample[0], 'input_extra_knowledge':sngram}, sample[1], sample[2]
 
   # TODO: Refactor this reorder function
   def _reorder(self, embedding, label, text):
@@ -115,7 +119,7 @@ class NeuralModel:
         conv_layers = tf.keras.layers.Flatten()(conv_layers)
 
         # Updates previous query_layer, from baseline.bert to CNN.bert
-        query_layer = tf.keras.Flatten()(conv_layers)
+        query_layer = tf.keras.layers.Flatten()(conv_layers)
 
         # Whether model is hybrid
         if self.mode in ['bert+sngram', 'bert+liwc', 'bert+sngram+liwc']:
@@ -139,7 +143,7 @@ class NeuralModel:
           concat_layer = tf.keras.layers.Concatenate()([layer_extra, conv_layers])
           
           # Updates previous query_layer, from CNN.bert to any hybrid cnn-based model
-          query_layer = tf.keras.Flatten()(concat_layer)
+          query_layer = tf.keras.layers.Flatten()(concat_layer)
      
       query_layer = tf.keras.layers.Dropout(0.5)(query_layer)
       output_layer = tf.keras.layers.Dense(
@@ -270,15 +274,22 @@ class NeuralModel:
 
     incorrects = []
     for sample in test:
-      x, y, text = sample[0], sample[1], sample[2]
+      print(sample)
+      x, y, text = sample[0], sample[1], None
       y_pred = model.predict(x, verbose=1)
 
-      if int(np.argmax(y_pred)) != int(np.argmax(y)):
-        text = text.numpy()[0].decode('utf-8')
-        incorrects.append(text)
+      # if int(np.argmax(y_pred)) != int(np.argmax(y)):
+      #   text = text.numpy()[0].decode('utf-8')
+      #   incorrects.append(text)
 
       predictions.append(int(np.argmax(y_pred)))
       references.append(int(np.argmax(y)))
+
+    confusion_matrix = metrics.confusion_matrix(references, predictions)
+    class_report = metrics.classification_report(references, predictions)
+
+    print(confusion_matrix)
+    print(class_report)
 
     # TODO: Adjust this path
     with open(self.json_path + f'{self.corpus}.{self.mode}.json', 'w') as f:
@@ -288,12 +299,6 @@ class NeuralModel:
     with open(self.json_path + f'{self.corpus}.{self.mode}.TRUE.json', 'w') as f:
       json.dump(references, f)
 
-    # TODO: Adjust this path
-    with open(self.json_path+f'{self.corpus}.{self.mode}.incorrects', 'w') as f:
-      json.dump(incorrects, f)
-
-    confusion_matrix = metrics.confusion_matrix(references, predictions)
-    class_report = metrics.classification_report(references, predictions)
-
-    print(confusion_matrix)
-    print(class_report)
+    # # TODO: Adjust this path
+    # with open(self.json_path+f'{self.corpus}.{self.mode}.incorrects', 'w') as f:
+    #   json.dump(incorrects, f)

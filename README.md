@@ -6,7 +6,7 @@ The inference of politically-charged information from text data is a popular res
 
 
 ## Model description
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+The resulting model, hereby called hybrid model, takes as an input parallel word embeddings, syntactic n-gramsand and LIWC-MRC (psycho) vectors. This model consists of a word-based CNN with two convolution channels (conv1 and conv2) with filters of size 2 and 3 with a mapping of size = 64 followed by a Batch Normalization and a MaxPooling layer with a 50% dropout. LIWC features are fed into a convolution with filter size = 1 andmapping size = 64. This is followed by a Batch Normalization and a MaxPooling layers, and then concatenated with conv1 and conv2. The sngram-psycho layer is concatenated with the two convolutions (conv1 ⊕ conv2 ⊕ liwc layer) with a 50% dropout layer, and finally fed into a softmax output layer.
 
 
 ## Organization
