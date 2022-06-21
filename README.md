@@ -20,6 +20,8 @@ This repository is organized as follows:
 > ::brain:: psych: folder containing psycholinguistic resources
 > 
 > :pencil2: sngram: folder containing syntatic dependencies n-grams
+> 
+> ::notebook: folder containing notebooks
 
 
 ## How to cite this work
