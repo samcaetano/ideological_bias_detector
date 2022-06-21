@@ -21,7 +21,7 @@ This repository is organized as follows:
 > 
 > :pencil2: sngram: folder containing syntatic dependencies n-grams
 > 
-> :notebook: folder containing notebooks
+> :notebook: notebook: folder containing notebooks
 
 
 ## How to cite this work
