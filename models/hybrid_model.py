@@ -7,6 +7,7 @@ import tensorflow_addons as tfa
 from .bert_embeddings import Embeddings_builder
 from sklearn import metrics
 from tensorflow.keras.callbacks import ModelCheckpoint
+import os
 
 class NeuralModel:
   def __init__(self,
@@ -175,7 +176,7 @@ class NeuralModel:
 
       return model
 
-  def train(self, dataset):
+  def train(self, dataset, num_epochs=25):
     """This will train the builted graph 
     """
 
@@ -199,11 +200,9 @@ class NeuralModel:
     steps_per_epoch = math.ceil(TRAIN_SIZE / BATCH_SIZE) 
     validation_steps = math.ceil((DEVELOPMENT_SIZE - TRAIN_SIZE) / BATCH_SIZE) 
 
-    train = train.map(self.builder.efficient_bert_preprocessing)
-    train = train.map(self.builder.efficient_build_bert_embeddings)
+    train = train.map(self.builder.efficient_bert_preprocessing) # Older: efficient_bert_preprocessing
 
     validation = validation.map(self.builder.efficient_bert_preprocessing)
-    validation = validation.map(self.builder.efficient_build_bert_embeddings)
 
     if self.comple_features_train is not None:
       self.comple_features_train = self.comple_features_train.take(DEVELOPMENT_SIZE) # takes all
@@ -222,7 +221,7 @@ class NeuralModel:
       train = train.map(self._reorder)
       validation = validation.map(self._reorder)
 
-    train_dataset = train.batch(BATCH_SIZE).cache().repeat(50)
+    train_dataset = train.batch(BATCH_SIZE).cache().repeat(num_epochs)
     validation_dataset = validation.batch(BATCH_SIZE).repeat(1)
     
     # TODO: Adjust path to save model
@@ -236,27 +235,30 @@ class NeuralModel:
        
     history = model.fit(
         train_dataset,
-        epochs=50,
+        epochs=num_epochs,
         validation_data=validation_dataset,
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps,
-        validation_freq=25,
-        callbacks=[checkpoints]
+        validation_freq=5,
+        callbacks=[checkpoints],
     )
 
   def predict(self, test, test_num_samples):
 
+    # Build graph for neural model 
     model = self.build_graph()
     
     model.load_weights(
-      self.model_path + f'{self.corpus}.{self.mode}.model.hdf5'
+      self.model_path + 'govbr.baseline.bertabaporu-base.model.hdf5' # f'{self.corpus}.{self.mode}.model.hdf5'
     )
 
+    # Take into memory the amount of test set
     test = test.take(test_num_samples)
 
+    # Maps to build bert embeddings
     test = test.map(self.builder.efficient_bert_preprocessing)
-    test = test.map(self.builder.efficient_build_bert_embeddings)
 
+    # Whether there is complementary features
     if self.comple_features_test is not None:      
       test_sngram = self.comple_features_test.map(self._pack_features)
 
@@ -265,40 +267,59 @@ class NeuralModel:
       test = test.map(self._reorder_for_test)
 
     else:
+      # Reorder to format text, features, label
       test = test.map(self._reorder)
     
+    # Rebatch to 1 size batch
     test = test.batch(1)
 
-    references, predictions = [], []
+    model_preds = {
+      'references': [],
+      'predictions': [],
+    }
 
-
-    incorrects = []
+    # Loop through each sample in test set
     for sample in test:
       print(sample)
-      x, y, text = sample[0], sample[1], None
+      # Get embedding, label and original text
+      x, y = sample[0], sample[1]
+      
+      # Predict
       y_pred = model.predict(x, verbose=1)
 
-      # if int(np.argmax(y_pred)) != int(np.argmax(y)):
-      #   text = text.numpy()[0].decode('utf-8')
-      #   incorrects.append(text)
+      # Get predicted label
+      y_pred = int(np.argmax(y_pred))
+      y_true = int(np.argmax(y))
 
-      predictions.append(int(np.argmax(y_pred)))
-      references.append(int(np.argmax(y)))
+      model_preds['predictions'].append(y_pred)
+      model_preds['references'].append(y_true)
 
-    confusion_matrix = metrics.confusion_matrix(references, predictions)
-    class_report = metrics.classification_report(references, predictions)
+    confusion_matrix = metrics.confusion_matrix(
+      model_preds['references'],
+      model_preds['predictions'],
+    )
+
+
+    model_preds['class_report'] = metrics.classification_report(
+      model_preds['references'],
+      model_preds['predictions'],
+      output_dict=True,
+    )
+
 
     print(confusion_matrix)
-    print(class_report)
 
-    # TODO: Adjust this path
-    with open(self.json_path + f'{self.corpus}.{self.mode}.json', 'w') as f:
-      json.dump(predictions, f)
+    # Whether exists json dir
+    if not os.path.exists(f'json/{self.corpus}'):
+      os.makedirs(f'json/{self.corpus}')
 
-    # TODO: Adjust this path
-    with open(self.json_path + f'{self.corpus}.{self.mode}.TRUE.json', 'w') as f:
-      json.dump(references, f)
+
+    with open(f'json/{self.corpus}.{self.mode}.predictions.json', 'w') as f:
+      json.dump(model_preds, f)
+
+    # with open(f'json/{self.corpus}.{self.mode}.predicted.json', 'w') as f:
+    #   json.dump(predictions, f)
 
     # # TODO: Adjust this path
-    # with open(self.json_path+f'{self.corpus}.{self.mode}.incorrects', 'w') as f:
-    #   json.dump(incorrects, f)
+    # with open(f'json/{self.corpus}.{self.mode}.true.json', 'w') as f:
+    #   json.dump(references, f)

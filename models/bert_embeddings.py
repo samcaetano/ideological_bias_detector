@@ -1,13 +1,21 @@
 """
 This script model is for building the BERT embeddings
 """
+from resource import prlimit
 import numpy as np
 import torch
 import re
 import tensorflow as tf
-from pytorch_pretrained_bert import BertModel
-from pytorch_pretrained_bert import BertTokenizer
+# from pytorch_pretrained_bert import BertModel
+# from pytorch_pretrained_bert import BertTokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+from transformers import AutoTokenizer  # Or BertTokenizer
+from transformers import AutoModelForPreTraining  # Or BertForPreTraining for loading pretraining heads
+from transformers import AutoModel, BertModel, BertTokenizer
+
+from tensorflow.python.ops.numpy_ops import np_config
+np_config.enable_numpy_behavior()
+
 
 class Embeddings_builder:
   def __init__(self, corpus, max_len=300, dim=768, num_classes=2, batch_size=16, lang='pt'):
@@ -24,14 +32,15 @@ class Embeddings_builder:
     
     # Whether to use BERT base for portuguese texts
     else:
-      self.bert_model = BertModel.from_pretrained('bert-base-multilingual-uncased')
-      self.tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-uncased')
+      self.bert_model = AutoModel.from_pretrained('pablocosta/bertabaporu-base-uncased') # neuralmind/bert-base-portuguese-cased
+      self.tokenizer = AutoTokenizer.from_pretrained('pablocosta/bertabaporu-base-uncased') # pablocosta/bertabaporu-base-uncased
 
     # Define resource paths
     self.csv_path = f'data/{self.corpus}/'
     self.psych_path = f'psych_features/{self.corpus}/'
     self.sngram_path = f'sngram_features/{self.corpus}/'
 
+  
   def load_text(self, filename):
     """Loads textual dataset 
 
@@ -48,6 +57,7 @@ class Embeddings_builder:
         num_parallel_reads=4,
     )
 
+  
   def load_liwc(self, filename):
     """Loads psychlinguistic features
 
@@ -64,6 +74,7 @@ class Embeddings_builder:
         num_parallel_reads=4,
     )
 
+  
   def load_sngram(self, filename):
     """Loads psychlinguistic features
 
@@ -80,6 +91,7 @@ class Embeddings_builder:
         num_parallel_reads=4,
     )
   
+  
   def clean(self, text):
     """Apply cleaning of twitter-mentions and all non-alphanumerical chars
 
@@ -95,7 +107,8 @@ class Embeddings_builder:
     
     return text
 
-  def _bert_preproc_unit(self, text, label):
+  
+  def _tokenize_and_embed(self, text, label):
     """Applies BERT preprocessing in a mapping fashion
 
     Args:
@@ -110,28 +123,24 @@ class Embeddings_builder:
 
     # Add special tokens [CLS] and [SEP] to sentences
     text = text.numpy()[0].decode('utf-8')
-    
-    text = '[CLS] ' + text + ' [SEP]'
 
-    # Tokenize sentences
-    tokenized_text = self.tokenizer.tokenize(text)
-    
-    # Clip to the maximum BERT's model sequence's length
-    tokenized_text = tokenized_text[:self.bert_max_len]
+    # Tokenize and convert to indexed IDs
+    inputs_ids = self.tokenizer(text, padding="max_length", max_length=300, truncation=True, return_tensors='pt')
 
-    # Find the BERT's index for each token in the sentence
-    indexed_text = self.tokenizer.convert_tokens_to_ids(tokenized_text)
+    with torch.no_grad():
+      #
+      outs = self.bert_model(**inputs_ids)
 
-    # Pad the text to the limit of 300 tokens
-    indexed_text = pad_sequences(
-      [indexed_text],
-      maxlen=self.bert_max_len,
-      padding='post'
-    )
+      # Get bert word embeddings
+      embedding = outs[0][0, :]
 
-    # Return padding to the max length
-    return indexed_text, label, text
+    #print(np.array(summed_last_4_layers).shape)
+    label = tf.one_hot(label, depth=2)[0]
 
+    return np.array(embedding), label, text
+
+
+  @DeprecationWarning
   def _build_bert(self, text, label, text_str):
     """Builds BERT embeddings from input
 
@@ -181,6 +190,48 @@ class Embeddings_builder:
     label = tf.one_hot(label, depth=2)
 
     return np.array(summed_last_4_layers), label[0], text_str
+
+
+  @DeprecationWarning
+  def _build_bert_v2(self, text, attention_mask, token_type_ids, label, text_str):
+    """Builds BERT embeddings from input
+
+    Args:
+      text: int vector previously indexed by BERT
+      label: label from sample
+      text_str: alphanumerical text from sample
+
+    Returns:
+      bert_embeddings: a 3D matrix, containing word embeddings
+      label: the true label corresponding to the word embedding matrix
+      text_str: the aplhanumerical text
+    """
+
+    # texts is a list of texts already tokenized and in numerical representation
+    # text = text[0].numpy()
+    input_ids = {
+      "input_ids": text,
+      "attention_mask": attention_mask,
+      "token_type_ids": token_type_ids,
+    }
+    
+    with torch.no_grad():
+      print(text.numpy(), type(text))
+
+      outs = self.bert_model(
+        input_ids=text,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+      )
+
+      # Get bert word embeddings, but [CLS] and [SEP] tokens
+      embedding = outs[0][0, 1:-1]
+
+    #print(np.array(summed_last_4_layers).shape)
+    label = tf.one_hot(label, depth=2)
+
+    return np.array(embedding), label[0], text_str
+  
   
   def efficient_bert_preprocessing(self, sample):
     """Maps a function to each sample in tf.Dataset
@@ -194,21 +245,65 @@ class Embeddings_builder:
     
     # Maps a tensorflow function to the content inputed
     preprocessed_sample = tf.py_function(
-      self._bert_preproc_unit,
+      self._tokenize_and_embed,
       inp=[
-        sample['text'],
-        sample['hyperpartisan'],
+        sample['Text'],
+        sample['Class'],
       ],
       Tout=(
-        tf.int32,
-        tf.int32,
+        tf.float32, # input_ids
+        tf.float32,
         tf.string,
       )
     )
 
+    preprocessed_sample[0].set_shape([self.bert_max_len, self.bert_dim])
+    preprocessed_sample[1].set_shape([2])
+
     return preprocessed_sample
 
-  def efficient_build_bert_embeddings(self, text, label, text_str):
+  @DeprecationWarning
+  def _bert_preproc_unit(self, text, label):
+    """Applies BERT preprocessing in a mapping fashion
+
+    Args:
+      text: textual content from dataset
+      label: label from the textual contents
+
+    Returns:
+      indexed_text: an int vector indexed by BERT
+      label: the one-hot for label
+      text: early alphanumerical text
+    """
+
+    # Add special tokens [CLS] and [SEP] to sentences
+    text = text.numpy()[0].decode('utf-8')
+    
+    # text = '[CLS] ' + text + ' [SEP]'
+
+    # Tokenize sentences
+    tokenized_text = self.tokenizer.tokenize(text)
+    print(tokenized_text)
+    
+    # Clip to the maximum BERT's model sequence's length
+    tokenized_text = tokenized_text[:self.bert_max_len]
+
+    # Find the BERT's index for each token in the sentence
+    indexed_text = self.tokenizer.convert_tokens_to_ids(tokenized_text)
+
+    # Pad the text to the limit of 300 tokens
+    indexed_text = pad_sequences(
+      [indexed_text],
+      maxlen=self.bert_max_len,
+      padding='post'
+    )
+
+    # Return padding to the max length
+    return indexed_text, label, text
+
+
+  @DeprecationWarning
+  def efficient_build_bert_embeddings(self, text, attention_mask, token_type_ids, label, text_str):
     """Maps the building of BERT embeddings to each sample in a tf.Dataset
 
     Args:
@@ -216,11 +311,13 @@ class Embeddings_builder:
     Returns:
     """
     BERTed_sample = tf.py_function(
-      self._build_bert,
+      self._build_bert_v2,
       inp=[
         text,
+        attention_mask,
+        token_type_ids,
         label,
-        text_str
+        text_str,
       ],
       Tout=(
         tf.float32,
