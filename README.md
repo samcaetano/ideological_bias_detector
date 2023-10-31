@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![TensorFlow](https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?style=for-the-badge&logo=TensorFlow&logoColor=white) ![scikit-learn](https://img.shields.io/badge/scikit--learn-%23F7931E.svg?style=for-the-badge&logo=scikit-learn&logoColor=white)
 
-The inference of politically-charged information from text data is a popular research topic in Natural Language Processing (NLP) at both text- and author-level. This repository contains code that enabled experiments upon the afore mentioned topic.
+The inference of politically-charged information from text data is a popular research topic in Natural Language Processing (NLP) at both text- and author-level. This repository contains code that enabled experiments upon the afore mentioned topivi.
 
 
 ## Model description
@@ -25,6 +25,8 @@ This repository is organized as follows:
 
 
 ## How to cite this work
+This work was released as a paper at JUCS 2023. Available here: https://www.proquest.com/openview/90c0448fc33c34d22ccf9eb0524e156f/1?pq-origsite=gscholar&cbl=6474026
+
 You may cite this work into yours using the following bibtext:
 ```
 @MASTERSDISSERTATION{silva2022,
